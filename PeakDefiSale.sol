@@ -13,64 +13,49 @@ contract PeakDefiSale {
     using ECDSA for bytes32;
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
-    // Pointer to Allocation staking contract, where burnPeakFromUser will be called.
     IAllocationStaking public allocationStakingContract;
-    // Pointer to sales factory contract
     ISalesFactory public factory;
     
     struct Sale {
-        // Token being sold
         IERC20 token;
-        // Is sale created
         bool isCreated;
-        // Are earnings withdrawn
         bool earningsWithdrawn;
-        // Is leftover withdrawn
         bool leftoverWithdrawn;
-        // Have tokens been deposited
         bool tokensDeposited;
-        // Address of sale owner
         address saleOwner;
-        // Price of the token quoted in BUSD
-        uint256 tokenPriceInBUSD;
-        // Amount of tokens to sell
+        uint256 tokenPriceInBUST;
         uint256 amountOfTokensToSell;
-        // Total tokens being sold
         uint256 totalTokensSold;
-        // Total AVAX Raised
         uint256 totalBUSDRaised;
-        // Sale end time
         uint256 saleEnd;
-        // Sale start time
         uint256 saleStart;
-        // When tokens can be withdrawn
         uint256 tokensUnlockTime;
     }
-
-    // Participation structure
     struct Participation {
         uint256 amountPaid;
         uint256 timeParticipated;
         uint256 tierId;
+        bool isTokenLeftWithdrawn;
         bool[] isPortionWithdrawn;
     }
+    struct Round {
+        uint256 startTime;
+        uint256 maxParticipation;
+    }
 
-    // Tier structure
     struct Tier {
         uint256 participants;
         uint256 tierWeight; 
-        uint256 BUSDDeposited;
+        uint256 BUSTDeposited;
         uint256 minToStake;
         uint256 maxToStake;
     }
 
-    // Whitelist User structure
     struct WhitelistUser {
         address userAddress;
         uint256 userTierId;
     }
 
-    // Registration structure
     struct Registration {
         uint256 registrationTimeStarts;
         uint256 registrationTimeEnds;
@@ -81,44 +66,30 @@ contract PeakDefiSale {
     Sale public sale;
     // Registration
     Registration public registration;
-    //Admin address
     address public admin;
-    // BUSD Token
-    IERC20 public BUSDToken = IERC20(0x8336B8B45d6edae6354d0985089A6dF8A7ada97f);
-    // Number of participats per round
+    IERC20 public Maintoken;
     uint256 public numberOfParticipants;
-    // Mapping user to his participation
+    uint256[] public roundIds;
+    mapping(uint256 => Round) public roundIdToRound;
     mapping(address => Participation) public userToParticipation;
-    // mapping if user is participated or not
+    mapping(address => uint256) public addressToRoundRegisteredFor;
     mapping(address => bool) public isParticipated;
-    // mapping if user is whitelisted
     mapping(address => WhitelistUser) public Whitelist;
-    // Times when portions are getting unlocked
     uint256[] public vestingPortionsUnlockTime;
-    // Percent of the participation user can withdraw
     uint256[] public vestingPercentPerPortion;
-    //Precision for percent for portion vesting
     uint256 public portionVestingPrecision;
-    // Added configurable round ID for staking round
     uint256 public stakingRoundId;
-    // Max vesting time shift
     uint256 public maxVestingTimeShift;
-    // Accounting total BUST collected, after sale admin can withdraw this
     uint256 public registrationFees;
-    // Tiers for Sale
     Tier[] public tierIdToTier;
-    // total tier weight
     uint256 public totalTierWeight;
-    // minimum token to stake for Sale
-    uint256 minimumTokensToStake = 100;
+    uint256 minimumTokensToStake = 2500;
 
-    // Restricting calls only to sale owner
     modifier onlySaleOwner() {
         require(msg.sender == sale.saleOwner, "OnlySaleOwner:: Restricted");
         _;
     }
 
-    // Only admin can call this function.
     modifier onlyAdmin() {
         require(
             msg.sender == admin ,
@@ -127,7 +98,6 @@ contract PeakDefiSale {
         _;
     }
 
-    // Check wallet allowance for contract
     modifier _hasAllowance(IERC20 token, address allower, uint256 amount) {
         // Make sure the allower has provided the right allowance.
         uint256 ourAllowance = token.allowance(allower, address(this));
@@ -135,14 +105,23 @@ contract PeakDefiSale {
         _;
     }
 
+    modifier _hasBalance(IERC20 token, address user, uint256 amount) {
+        // Make sure the allower has provided the right allowance.
+        uint256 userBalance = token.balanceOf(user);
+        require(amount <= userBalance, "Make sure to add enough allowance");
+        _;
+    }
+
     // EVENTS
 
     event TokensSold(address user, uint256 amount);
+    event UserRegistered(address user, uint256 roundId);
     event TokenPriceSet(uint256 newPrice);
+    event MaxParticipationSet(uint256 roundId, uint256 maxParticipation);
     event TokensWithdrawn(address user, uint256 amount);
     event SaleCreated(
         address saleOwner,
-        uint256 tokenPriceInBUSD,
+        uint256 tokenPriceInBUST,
         uint256 amountOfTokensToSell,
         uint256 saleEnd,
         uint256 tokensUnlockTime
@@ -214,6 +193,7 @@ contract PeakDefiSale {
     function setSaleParams(
         address _token,
         address _saleOwner,
+        address _mainToken,
         uint256 _tokenPriceInBUSD,
         uint256 _amountOfTokensToSell,
         uint256 _saleEnd,
@@ -237,10 +217,11 @@ contract PeakDefiSale {
         // TODO: validate
         require(_stakingRoundId > 0, "Staking round ID can not be 0.");
         // Set params
+        Maintoken = IERC20(_mainToken);
         sale.token = IERC20(_token);
         sale.isCreated = true;
         sale.saleOwner = _saleOwner;
-        sale.tokenPriceInBUSD = _tokenPriceInBUSD;
+        sale.tokenPriceInBUST = _tokenPriceInBUSD;
         sale.amountOfTokensToSell = _amountOfTokensToSell;
         sale.saleEnd = _saleEnd;
         sale.tokensUnlockTime = _tokensUnlockTime;
@@ -248,7 +229,7 @@ contract PeakDefiSale {
         stakingRoundId = _stakingRoundId;
         emit SaleCreated(
             sale.saleOwner,
-            sale.tokenPriceInBUSD,
+            sale.tokenPriceInBUST,
             sale.amountOfTokensToSell,
             sale.saleEnd,
             sale.tokensUnlockTime
@@ -260,13 +241,13 @@ contract PeakDefiSale {
         uint256 _registrationTimeStarts,
         uint256 _registrationTimeEnds
     ) external onlyAdmin {
-        require(sale.isCreated);
-        require(registration.registrationTimeStarts == 0);
+        require(sale.isCreated, "1");
+        // require(registration.registrationTimeStarts == 0, "2");
         require(
             _registrationTimeStarts >= block.timestamp &&
-                _registrationTimeEnds > _registrationTimeStarts
+                _registrationTimeEnds > _registrationTimeStarts, "3"
         );
-        require(_registrationTimeEnds < sale.saleEnd);
+        require(_registrationTimeEnds < sale.saleEnd, "4");
 
 
         registration.registrationTimeStarts = _registrationTimeStarts;
@@ -291,47 +272,45 @@ contract PeakDefiSale {
         sale.token = IERC20(saleToken);
     }
 
-    /// @notice     Registration for sale.
+
     function registerForSale() public {
 
-        uint256 stakeAmount = allocationStakingContract.deposited(stakingRoundId, msg.sender);
+        uint256 stakeAmount = allocationStakingContract.deposited(msg.sender);
 
-        require(stakeAmount > minimumTokensToStake, "Need to stake tokens");
-        require(
-            block.timestamp >= registration.registrationTimeStarts &&
-                block.timestamp <= registration.registrationTimeEnds,
-            "Registration gate is closed."
-        );
+        require(stakeAmount.div(1e18) > minimumTokensToStake, "Need to stake tokens");
+        require( Whitelist[msg.sender].userAddress != msg.sender, "You are registered");
+        require( block.timestamp >= registration.registrationTimeStarts && block.timestamp <= registration.registrationTimeEnds , "Register is closed");
         for (uint256 i = 0; i < tierIdToTier.length; i++) {
             Tier memory t = tierIdToTier[i];
-            if( t.minToStake <= stakeAmount && t.maxToStake < stakeAmount){
+            if( t.minToStake <= stakeAmount && t.maxToStake > stakeAmount){
                 WhitelistUser memory u = WhitelistUser({
                 userAddress: msg.sender, 
                 userTierId: i
                 });
-                // Set whitelist user
                 Whitelist[msg.sender] = u;
                 // Increment number of registered users
                 registration.numberOfRegistrants++;
+                // Emit Registration event
                 break;
             }
         }
     }
     
-    /// @notice     Update token price.
     function updateTokenPriceInBUSD(uint256 price) external onlyAdmin {
         require(price > 0, "Price can not be 0.");
-        sale.tokenPriceInBUSD = price;
+        // Allowing oracle to run and change the sale value
+        sale.tokenPriceInBUST = price;
         emit TokenPriceSet(price);
     }
 
-    /// @notice     Set user for whitelist
-    function setWhitelistUsers(address [] calldata users, uint256 tierId) public payable {
+    /// TODO remove test Function
+    function updateSalePeriod(uint256 saleStartTime, uint256 saleEndTime, uint256 tokensUnlockTime) public {
+        sale.saleStart = saleStartTime;
+        sale.saleEnd = saleEndTime;
+        sale.tokensUnlockTime = tokensUnlockTime;
+    }
 
-        require( 
-                tierId > 0,
-                "Tier id can`t be lower than 0"
-            );
+    function setWhitelistUsers(address [] calldata users, uint256 tierId) public payable {
 
          for (uint256 i = 0; i < users.length; i++) {
 
@@ -344,14 +323,13 @@ contract PeakDefiSale {
         
     }
 
-    /// @notice     Add new tiers for sale
-    function addTiers(uint256 [] calldata tierWeights, uint256 [] calldata tiersStaking)  public {   
+    function addTiers(uint256 [] calldata tierWeights, uint256 [] calldata tierPoints)  public {   
         
         require(tierWeights.length > 0, "Need to be more than 1 tier");
-        require(tierWeights.length == tiersStaking.length, "Staking and weights must be th same length");
+        require(tierWeights.length == tierPoints.length, "Points and weights must be th same length");
 
 
-        uint256 endPrevBlockStakePoints = tierIdToTier.length == 0 ? minimumTokensToStake : tierIdToTier[tierIdToTier.length - 1].minToStake;
+        // uint256 endPrevBlockStakePoints = tierIdToTier.length == 0 ? tierPoints[0] : tierIdToTier[tierIdToTier.length - 1].maxToStake;
 
         for (uint256 i = 0; i < tierWeights.length; i++) {
             require( 
@@ -359,20 +337,22 @@ contract PeakDefiSale {
                 "Tier weight must be greater then 0"
             );
 
-            require( tiersStaking[i] > endPrevBlockStakePoints, "Your next block can`t have lees LP token to stake then last one");
+            // require( tierPoints[i] > endPrevBlockStakePoints, "Your next block can`t have lees LP token to stake then last one");
 
             totalTierWeight = totalTierWeight.add(tierWeights[i]);
+
+            uint256 maxToStake = tierPoints.length - 1 > i ? tierPoints[i+1] : 2**256 - 1;
 
             Tier memory t = Tier({
                 participants: 0,
                 tierWeight: tierWeights[i],
-                BUSDDeposited: 0,
-                minToStake: endPrevBlockStakePoints,
-                maxToStake: tiersStaking[i]
+                BUSTDeposited: 0,
+                minToStake: tierPoints[i],
+                maxToStake: maxToStake
             });
             tierIdToTier.push(t);
 
-            endPrevBlockStakePoints = tiersStaking[i];
+            // endPrevBlockStakePoints = tierPoints[i];
         }
 
      
@@ -399,7 +379,8 @@ contract PeakDefiSale {
     function participate(uint256 amount) 
     external 
     payable 
-    // _hasAllowance(BUSDToken, msg.sender, amount)
+    _hasAllowance(Maintoken, msg.sender, amount)
+    _hasBalance(Maintoken, msg.sender, amount)
     {
         // Check sale created
         require(sale.isCreated, "Wait for sale create");
@@ -435,13 +416,14 @@ contract PeakDefiSale {
             amountPaid: amount,
             timeParticipated: block.timestamp,
             tierId: _tierId,
+            isTokenLeftWithdrawn: false,
             isPortionWithdrawn: _isPortionWithdrawn
         });
 
         Tier storage t = tierIdToTier[_tierId];
 
         t.participants = t.participants.add(1);
-        t.BUSDDeposited = t.BUSDDeposited.add(amount);
+        t.BUSTDeposited = t.BUSTDeposited.add(amount);
         // Add participation for user.
         userToParticipation[msg.sender] = p;
         // Mark user is participated
@@ -449,7 +431,9 @@ contract PeakDefiSale {
         // Increment number of participants in the Sale.
         numberOfParticipants++;
 
-        BUSDToken.transferFrom(msg.sender, address(this), amountOfTokensDeposited);
+        sale.totalTokensSold = sale.totalTokensSold.add(amountOfTokensDeposited.div(sale.tokenPriceInBUST));
+
+        Maintoken.transferFrom(msg.sender, address(this), amountOfTokensDeposited);
     }
 
     /// Users can claim their participation
@@ -462,12 +446,17 @@ contract PeakDefiSale {
 
         Participation storage p = userToParticipation[msg.sender];
 
+        if(!p.isTokenLeftWithdrawn){
+            withdrawLeftoverForUser(msg.sender);
+            p.isTokenLeftWithdrawn = true;
+        }
+
         if (
             !p.isPortionWithdrawn[portionId] &&
             vestingPortionsUnlockTime[portionId] <= block.timestamp
         ) {
             p.isPortionWithdrawn[portionId] = true;
-            uint256 amountWithdrawing = calculateAmountWithdrawingPortion(msg.sender, vestingPercentPerPortion[portionId]);
+            uint256 amountWithdrawing = calculateAmountWithdrawing(msg.sender, vestingPercentPerPortion[portionId]);
 
             // Withdraw percent which is unlocked at that portion
             if(amountWithdrawing > 0) {
@@ -479,6 +468,18 @@ contract PeakDefiSale {
         }
     }
 
+    function withdrawLeftoverForUser(address userAddress) internal  {
+        Participation memory p = userToParticipation[userAddress];
+
+
+        uint256 tokensForUser = calculateAmountWithdrawing(userAddress, 100);
+
+        uint256 leftover = p.amountPaid.sub(tokensForUser.mul(sale.tokenPriceInBUST));
+
+        if(leftover > 0){
+            Maintoken.safeTransfer(msg.sender, leftover);
+        }
+    }
     
 
     // Expose function where user can withdraw multiple unlocked portions at once.
@@ -496,7 +497,7 @@ contract PeakDefiSale {
                 vestingPortionsUnlockTime[portionId] <= block.timestamp
             ) {
                 p.isPortionWithdrawn[portionId] = true;
-                uint256 amountWithdrawing = calculateAmountWithdrawingPortion(msg.sender, vestingPercentPerPortion[portionId]);
+                uint256 amountWithdrawing = calculateAmountWithdrawing(msg.sender, vestingPercentPerPortion[portionId]);
                 // Withdraw percent which is unlocked at that portion
                 totalToWithdraw = totalToWithdraw.add(amountWithdrawing);
             }
@@ -572,6 +573,26 @@ contract PeakDefiSale {
         );
     }
 
+    receive() external payable {
+
+    }
+
+    function isWhitelisted()
+        external
+        view
+        returns (
+            bool
+        )
+    {
+        WhitelistUser memory u = Whitelist[msg.sender];
+        bool isInWhitelist = false;
+        if(u.userAddress == msg.sender){
+            isInWhitelist = true;
+        }
+        return (isInWhitelist);
+    }
+    
+
     function getParticipation(address _user)
         external
         view
@@ -599,7 +620,7 @@ contract PeakDefiSale {
         return (vestingPortionsUnlockTime, vestingPercentPerPortion);
     }
 
-    function calculateAmountWithdrawingPortion(address userAddress, uint256 tokenPercent) internal view returns (
+    function calculateAmountWithdrawing(address userAddress, uint256 tokenPercent) internal view returns (
             uint256
         ) {
         
@@ -607,9 +628,19 @@ contract PeakDefiSale {
 
         Tier memory t = tierIdToTier[uint(p.tierId)];
 
+        uint256 tokensForUser = 0;
+
         uint256 tokensPerTier = t.tierWeight.mul(sale.amountOfTokensToSell).div(totalTierWeight);
 
-        uint256 tokensForUser = tokensPerTier.mul(tokenPercent).div(t.participants).div(100);
+        uint256 maximunTokensForUser = tokensPerTier.mul(tokenPercent).div(t.participants).div(100);
+
+        uint256 userTokenWish = p.amountPaid.div(sale.tokenPriceInBUST);
+
+        if(maximunTokensForUser >= userTokenWish){
+            tokensForUser = userTokenWish;
+        }else{
+            tokensForUser = maximunTokensForUser;
+        }
 
         return (tokensForUser);
     }
