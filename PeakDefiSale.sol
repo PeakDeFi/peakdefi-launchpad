@@ -2,17 +2,12 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./ISalesFactory.sol";
 import "./IAllocationStaking.sol";
-
-contract PeakDefiSale {
-    using ECDSA for bytes32;
+contract DefiSale {
     using SafeMath for uint256;
-    using SafeERC20 for IERC20;
     IAllocationStaking public allocationStakingContract;
     ISalesFactory public factory;
     
@@ -21,7 +16,6 @@ contract PeakDefiSale {
         bool isCreated;
         bool earningsWithdrawn;
         bool leftoverWithdrawn;
-        bool tokensDeposited;
         address saleOwner;
         uint256 tokenPriceInBUST;
         uint256 amountOfTokensToSell;
@@ -38,10 +32,7 @@ contract PeakDefiSale {
         bool isTokenLeftWithdrawn;
         bool[] isPortionWithdrawn;
     }
-    struct Round {
-        uint256 startTime;
-        uint256 maxParticipation;
-    }
+
 
     struct Tier {
         uint256 participants;
@@ -67,10 +58,9 @@ contract PeakDefiSale {
     // Registration
     Registration public registration;
     address public admin;
+    bool tokensDeposited;
     IERC20 public Maintoken;
     uint256 public numberOfParticipants;
-    uint256[] public roundIds;
-    mapping(uint256 => Round) public roundIdToRound;
     mapping(address => Participation) public userToParticipation;
     mapping(address => uint256) public addressToRoundRegisteredFor;
     mapping(address => bool) public isParticipated;
@@ -78,7 +68,6 @@ contract PeakDefiSale {
     uint256[] public vestingPortionsUnlockTime;
     uint256[] public vestingPercentPerPortion;
     uint256 public portionVestingPrecision;
-    uint256 public stakingRoundId;
     uint256 public maxVestingTimeShift;
     uint256 public registrationFees;
     Tier[] public tierIdToTier;
@@ -98,26 +87,11 @@ contract PeakDefiSale {
         _;
     }
 
-    modifier _hasAllowance(IERC20 token, address allower, uint256 amount) {
-        // Make sure the allower has provided the right allowance.
-        uint256 ourAllowance = token.allowance(allower, address(this));
-        require(amount <= ourAllowance, "Make sure to add enough allowance");
-        _;
-    }
-
-    modifier _hasBalance(IERC20 token, address user, uint256 amount) {
-        // Make sure the allower has provided the right allowance.
-        uint256 userBalance = token.balanceOf(user);
-        require(amount <= userBalance, "Make sure to add enough allowance");
-        _;
-    }
-
     // EVENTS
 
     event TokensSold(address user, uint256 amount);
     event UserRegistered(address user, uint256 roundId);
     event TokenPriceSet(uint256 newPrice);
-    event MaxParticipationSet(uint256 roundId, uint256 maxParticipation);
     event TokensWithdrawn(address user, uint256 amount);
     event SaleCreated(
         address saleOwner,
@@ -198,8 +172,7 @@ contract PeakDefiSale {
         uint256 _amountOfTokensToSell,
         uint256 _saleEnd,
         uint256 _tokensUnlockTime,
-        uint256 _portionVestingPrecision,
-        uint256 _stakingRoundId
+        uint256 _portionVestingPrecision
     ) external onlyAdmin {
         require(!sale.isCreated, "setSaleParams: Sale is already created.");
         require(
@@ -214,8 +187,6 @@ contract PeakDefiSale {
             "setSaleParams: Bad input"
         );
         require(_portionVestingPrecision >= 100, "Should be at least 100");
-        // TODO: validate
-        require(_stakingRoundId > 0, "Staking round ID can not be 0.");
         // Set params
         Maintoken = IERC20(_mainToken);
         sale.token = IERC20(_token);
@@ -226,7 +197,6 @@ contract PeakDefiSale {
         sale.saleEnd = _saleEnd;
         sale.tokensUnlockTime = _tokensUnlockTime;
         portionVestingPrecision = _portionVestingPrecision;
-        stakingRoundId = _stakingRoundId;
         emit SaleCreated(
             sale.saleOwner,
             sale.tokenPriceInBUST,
@@ -360,14 +330,12 @@ contract PeakDefiSale {
 
 
     // Function for owner to deposit tokens, can be called only once.
-    function depositTokens() external onlySaleOwner _hasAllowance(sale.token, msg.sender, sale.amountOfTokensToSell) {
+    function depositTokens() external onlySaleOwner  {
         require(
-            !sale.tokensDeposited, "Deposit can be done only once"
+            !tokensDeposited, "Deposit can be done only once"
         );
-
-        sale.tokensDeposited = true;
-
-        sale.token.safeTransferFrom(
+        tokensDeposited = true;
+        sale.token.transferFrom(
             msg.sender,
             address(this),
             sale.amountOfTokensToSell
@@ -379,8 +347,6 @@ contract PeakDefiSale {
     function participate(uint256 amount) 
     external 
     payable 
-    _hasAllowance(Maintoken, msg.sender, amount)
-    _hasBalance(Maintoken, msg.sender, amount)
     {
         // Check sale created
         require(sale.isCreated, "Wait for sale create");
@@ -460,7 +426,7 @@ contract PeakDefiSale {
 
             // Withdraw percent which is unlocked at that portion
             if(amountWithdrawing > 0) {
-                sale.token.safeTransfer(msg.sender, amountWithdrawing);
+                sale.token.transfer(msg.sender, amountWithdrawing);
                 emit TokensWithdrawn(msg.sender, amountWithdrawing);
             }
         } else {
@@ -477,7 +443,7 @@ contract PeakDefiSale {
         uint256 leftover = p.amountPaid.sub(tokensForUser.mul(sale.tokenPriceInBUST));
 
         if(leftover > 0){
-            Maintoken.safeTransfer(msg.sender, leftover);
+            Maintoken.transfer(msg.sender, leftover);
         }
     }
     
@@ -504,7 +470,7 @@ contract PeakDefiSale {
         }
 
         if(totalToWithdraw > 0) {
-            sale.token.safeTransfer(msg.sender, totalToWithdraw);
+            sale.token.transfer(msg.sender, totalToWithdraw);
             emit TokensWithdrawn(msg.sender, totalToWithdraw);
         }
     }
@@ -553,7 +519,7 @@ contract PeakDefiSale {
         sale.leftoverWithdrawn = true;
         uint256 leftover = sale.amountOfTokensToSell.sub(sale.totalTokensSold);
         if (leftover > 0) {
-            sale.token.safeTransfer(msg.sender, leftover);
+            sale.token.transfer(msg.sender, leftover);
         }
     }
     function withdrawRegistrationFees() external onlyAdmin {
