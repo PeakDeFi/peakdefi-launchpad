@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract AllocationStaking {
 
-    using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     // Info of each user.
@@ -15,10 +14,11 @@ contract AllocationStaking {
     }
 
     uint256 internal secondsPerDay = 86400;
+    uint256 public stakingPercent = 7;
+    uint256 public secondsPreYear = 31556926;
 
     IERC20 stakingToken;
 
-    uint256 public stakingPercent = 7;
 
     address admin;
     // The total amount of ERC20 that's paid out as reward.
@@ -44,14 +44,14 @@ contract AllocationStaking {
     function setStakingToken(
         IERC20 _erc20
     )
-    public
+    public onlyOwner
     {
         stakingToken = _erc20;
     }
 
     function fund(uint256 _amount) public onlyOwner {
         stakingToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-        totalRewards = totalRewards.add(_amount);
+        totalRewards = totalRewards+_amount;
     }
 
     function withdraw(uint256 _amount) public{
@@ -61,14 +61,14 @@ contract AllocationStaking {
         harvest();
 
         uint256 withdrawFee = getFeeInternal(_amount, user.stakingStart);
-        uint256 tokenToWithdraw = _amount.sub(withdrawFee);       
+        uint256 tokenToWithdraw = _amount-withdrawFee;       
 
-        totalRewards = totalRewards.add(withdrawFee);
+        totalRewards = totalRewards+withdrawFee;
 
         user.stakingStart = block.timestamp;
-        user.amount = user.amount.sub(_amount);
+        user.amount = user.amount-_amount;
 
-        totalDeposits = totalDeposits.sub(_amount);
+        totalDeposits = totalDeposits-_amount;
         stakingToken.safeTransfer(address(msg.sender), tokenToWithdraw);
     }
 
@@ -81,9 +81,9 @@ contract AllocationStaking {
         }
 
         stakingToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-        totalDeposits = totalDeposits.add(_amount);
+        totalDeposits = totalDeposits+_amount;
 
-        user.amount = user.amount.add(_amount);
+        user.amount = user.amount+_amount;
         user.stakingStart = block.timestamp;
     }
 
@@ -106,7 +106,7 @@ contract AllocationStaking {
         stakingToken.safeTransfer(address(msg.sender), userPendingEarns);
         user.stakingStart = block.timestamp;
 
-        paidOut = paidOut.add(userPendingEarns);
+        paidOut = paidOut + userPendingEarns;
     }
    
 
@@ -118,30 +118,30 @@ contract AllocationStaking {
 
     function getFeeInternal( uint256 amount, uint256 stakingStart )  public view returns(uint256){
         
-        uint256 withdrawFeePercent = getUnstakePercent(block.timestamp.sub(stakingStart));
+        uint256 withdrawFeePercent = getUnstakePercent(block.timestamp-stakingStart);
         
-        return(amount.mul(withdrawFeePercent).div(100));
+        return(amount*withdrawFeePercent/100);
     }
 
 
     function pendingAmountInternal(uint256 _stakingStart, uint256 _amount) internal view returns(uint256){
         uint256 currenntTimestamp = block.timestamp;
-        uint256 stakingDuration = currenntTimestamp.sub(_stakingStart);
+        uint256 stakingDuration = currenntTimestamp-_stakingStart;
 
-        uint256 pendingTokens = _amount.mul(stakingDuration).mul(7).div(100).div(31556926);
+        uint256 pendingTokens = _amount*stakingDuration*stakingPercent/100/secondsPreYear;
 
         return (pendingTokens);
     }
 
     function getUnstakePercent(uint256 stakingTime) internal view returns (uint256){
         uint256 unstakePercent = 0;
-        if ( stakingTime < secondsPerDay.mul(14) ){
+        if ( stakingTime < secondsPerDay*14 ){
             unstakePercent = 30;
-        } else if ( stakingTime < secondsPerDay.mul(28) ){
+        } else if ( stakingTime < secondsPerDay*28 ){
             unstakePercent = 20;
-        } else if ( stakingTime < secondsPerDay.mul(56) ){
+        } else if ( stakingTime < secondsPerDay*56 ){
             unstakePercent = 10;
-        } else if ( stakingTime < secondsPerDay.mul(84) ){
+        } else if ( stakingTime < secondsPerDay*84 ){
             unstakePercent = 5;
         }
         return (unstakePercent);
