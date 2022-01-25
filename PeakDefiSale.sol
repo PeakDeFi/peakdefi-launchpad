@@ -5,22 +5,26 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
 import "./ISalesFactory.sol";
 import "./IAllocationStaking.sol";
+
+interface IERC20Extented is IERC20 {
+    function decimals() external view returns (uint8);
+}
+
 contract PeakDefiSale {
 
-    using SafeERC20 for IERC20;
+    using SafeERC20 for IERC20Extented;
 
     IAllocationStaking public allocationStakingContract;
     ISalesFactory public factory;
     
     struct Sale {
-        IERC20 token;
+        IERC20Extented token;
         bool isCreated;
         bool earningsWithdrawn;
         bool leftoverWithdrawn;
         address saleOwner;
         uint256 tokenPriceInBUST;
         uint256 amountOfTokensToSell;
-        uint256 totalTokensSold;
         uint256 totalBUSDRaised;
         uint256 saleEnd;
         uint256 saleStart;
@@ -58,7 +62,7 @@ contract PeakDefiSale {
     Registration public registration;
     address public admin;
     bool tokensDeposited;
-    IERC20 public BUSDToken = IERC20(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
+    IERC20Extented public BUSDToken = IERC20Extented(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
     uint256 public numberOfParticipants;
     mapping(address => Participation) public userToParticipation;
     mapping(address => uint256) public addressToRoundRegisteredFor;
@@ -136,7 +140,7 @@ contract PeakDefiSale {
                 _tokensUnlockTime > block.timestamp,
             "Bad input"
         );
-        sale.token = IERC20(_token);
+        sale.token = IERC20Extented(_token);
         sale.isCreated = true;
         sale.saleOwner = _saleOwner;
         sale.tokenPriceInBUST = _tokenPriceInBUSD;
@@ -285,8 +289,6 @@ contract PeakDefiSale {
         isParticipated[msg.sender] = true;
         numberOfParticipants++;
 
-        sale.totalTokensSold = sale.totalTokensSold + amount / sale.tokenPriceInBUST;
-
         BUSDToken.safeTransferFrom(msg.sender, address(this), amount);
     }
 
@@ -325,7 +327,7 @@ contract PeakDefiSale {
 
         uint256 tokensForUser = calculateAmountWithdrawing(userAddress, 100);
 
-        uint256 leftover = p.amountPaid - tokensForUser * sale.tokenPriceInBUST;
+        uint256 leftover = p.amountPaid - tokensForUser * sale.tokenPriceInBUST / 10**sale.token.decimals();
 
         if(leftover > 0){
             BUSDToken.safeTransfer(msg.sender, leftover);
@@ -383,10 +385,31 @@ contract PeakDefiSale {
         require(block.timestamp >= sale.saleEnd);
         require(!sale.leftoverWithdrawn);
         sale.leftoverWithdrawn = true;
-        uint256 leftover = sale.amountOfTokensToSell - sale.totalTokensSold;
+        uint256 totalTokensSold = calculateTotalTokensSold();
+        uint256 leftover = sale.amountOfTokensToSell - totalTokensSold;
         if (leftover > 0) {
             sale.token.safeTransfer(msg.sender, leftover);
         }
+    }
+
+    function calculateTotalTokensSold() internal view returns (
+            uint256
+        ) {
+        uint256 totalTokensSold = 0;
+
+        for (uint256 i = 0; i < tierIdToTier.length; i++) {
+            Tier memory t = tierIdToTier[i];
+
+            uint256 tokensPerTier = t.tierWeight * sale.amountOfTokensToSell/totalTierWeight;
+
+            if( tokensPerTier * sale.tokenPriceInBUST / 10**sale.token.decimals() < t.BUSTDeposited ){
+                totalTokensSold = totalTokensSold + tokensPerTier;
+            } else {
+                totalTokensSold = t.BUSTDeposited / sale.tokenPriceInBUST * 10**sale.token.decimals();
+            }
+        }
+
+        return(totalTokensSold);
     }
 
     function isWhitelisted()
@@ -421,7 +444,7 @@ contract PeakDefiSale {
 
         uint256 maximunTokensForUser = tokensPerTier*tokenPercent/t.participants/100;
 
-        uint256 userTokenWish = p.amountPaid/sale.tokenPriceInBUST;
+        uint256 userTokenWish = p.amountPaid/sale.tokenPriceInBUST * (10**sale.token.decimals());
 
         if(maximunTokensForUser >= userTokenWish){
             tokensForUser = userTokenWish;
