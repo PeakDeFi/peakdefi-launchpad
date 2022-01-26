@@ -58,11 +58,11 @@ contract AllocationStaking {
         UserInfo storage user = userInfo[msg.sender];
         require( user.amount <= _amount, "Not enough balance" );
 
-        harvest();
 
         uint256 withdrawFee = getFeeInternal(_amount, user.stakingStart);
         uint256 tokenToWithdraw = _amount-withdrawFee;       
 
+        harvest();
         totalRewards = totalRewards+withdrawFee;
 
         user.stakingStart = block.timestamp;
