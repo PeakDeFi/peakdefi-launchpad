@@ -56,7 +56,7 @@ contract AllocationStaking {
 
     function withdraw(uint256 _amount) public{
         UserInfo storage user = userInfo[msg.sender];
-        require( user.amount <= _amount, "Not enough balance" );
+        require( user.amount >= _amount, "Not enough balance" );
 
 
         uint256 withdrawFee = getFeeInternal(_amount, user.stakingStart);
