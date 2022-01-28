@@ -107,7 +107,7 @@ contract PeakDefiSale {
             vestingPortionsUnlockTime.length == 0
         );
         require(_unlockingTimes.length == _percents.length);
-        require(!sale.isCreated, "Safeguard for making sure setSaleParams get first called.");
+        require(sale.isCreated, "Safeguard for making sure setSaleParams get first called.");
 
         uint256 sum;
 
