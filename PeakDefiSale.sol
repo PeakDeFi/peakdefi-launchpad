@@ -444,7 +444,7 @@ contract PeakDefiSale {
 
         uint256 maximunTokensForUser = tokensPerTier*tokenPercent/t.participants/100;
 
-        uint256 userTokenWish = p.amountPaid/sale.tokenPriceInBUST * (10**sale.token.decimals());
+        uint256 userTokenWish = p.amountPaid/sale.tokenPriceInBUST * (10**sale.token.decimals())*tokenPercent/100;
 
         if(maximunTokensForUser >= userTokenWish){
             tokensForUser = userTokenWish;
