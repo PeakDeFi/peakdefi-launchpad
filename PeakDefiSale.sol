@@ -404,10 +404,10 @@ contract PeakDefiSale {
 
             uint256 tokensPerTier = t.tierWeight * sale.amountOfTokensToSell/totalTierWeight;
 
-            if( tokensPerTier * sale.tokenPriceInBUST / 10**sale.token.decimals() < t.BUSTDeposited ){
+            if( tokensPerTier * sale.tokenPriceInBUST / 10**sale.token.decimals() <= t.BUSTDeposited ){
                 totalTokensSold = totalTokensSold + tokensPerTier;
             } else {
-                totalTokensSold = t.BUSTDeposited / sale.tokenPriceInBUST * 10**sale.token.decimals();
+                totalTokensSold =  totalTokensSold + t.BUSTDeposited / sale.tokenPriceInBUST * 10**sale.token.decimals();
             }
         }
 
