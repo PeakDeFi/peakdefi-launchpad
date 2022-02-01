@@ -125,6 +125,7 @@ contract PeakDefiSale {
         address _saleOwner,
         uint256 _tokenPriceInBUSD,
         uint256 _amountOfTokensToSell,
+        uint256 _saleStart,
         uint256 _saleEnd,
         uint256 _tokensUnlockTime
     ) external onlyAdmin {
@@ -146,6 +147,7 @@ contract PeakDefiSale {
         sale.tokenPriceInBUST = _tokenPriceInBUSD;
         sale.amountOfTokensToSell = _amountOfTokensToSell;
         sale.saleEnd = _saleEnd;
+        sale.saleStart = _saleStart;
         sale.tokensUnlockTime = _tokensUnlockTime;
     }
 

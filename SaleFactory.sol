@@ -59,7 +59,7 @@ contract SalesFactory {
 
     function getAllSales(uint startIndex, uint endIndex) external view returns (address[] memory) {
         require(endIndex > startIndex, "Bad input");
-        require(endIndex < allSales.length, "Request more sale than created");
+        require(endIndex <= allSales.length, "Request more sale than created");
 
         address[] memory sales = new address[](endIndex - startIndex);
         uint index = 0;
