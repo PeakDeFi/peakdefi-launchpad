@@ -72,7 +72,6 @@ contract PeakDefiSale {
     uint256[] public vestingPercentPerPortion;
     Tier[] public tierIdToTier;
     uint256 public totalTierWeight;
-    uint256 minimumTokensToStake = 2500;
 
     modifier onlySaleOwner() {
         require(msg.sender == sale.saleOwner, "OnlySaleOwner");
@@ -172,7 +171,8 @@ contract PeakDefiSale {
 
         uint256 stakeAmount = allocationStakingContract.deposited(msg.sender);
 
-        require(stakeAmount / 1e18 > minimumTokensToStake, "Need stake tokens");
+        require(tierIdToTier.length > 0, "Need to set Tiers");
+        require(tierIdToTier[0].minToStake <= stakeAmount / 1e18 , "Need to stake minimum for current sale");
         require( Whitelist[msg.sender].userAddress != msg.sender, "You are registered");
         require( block.timestamp >= registration.registrationTimeStarts && block.timestamp <= registration.registrationTimeEnds , "Register is closed");
         for (uint256 i = 0; i < tierIdToTier.length; i++) {
