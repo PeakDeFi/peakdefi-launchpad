@@ -103,9 +103,11 @@ contract AllocationStaking {
 
         uint256 userPendingEarns = pending();
 
+        require( userPendingEarns <= totalRewards, "Not enough token" );
+
         stakingToken.safeTransfer(address(msg.sender), userPendingEarns);
         user.stakingStart = block.timestamp;
-
+        totalRewards = totalRewards - userPendingEarns;
         paidOut = paidOut + userPendingEarns;
     }
    
