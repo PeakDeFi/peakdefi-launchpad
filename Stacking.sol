@@ -141,9 +141,9 @@ contract AllocationStaking {
             unstakePercent = 30;
         } else if ( stakingTime < secondsPerDay*28 ){
             unstakePercent = 20;
-        } else if ( stakingTime < secondsPerDay*56 ){
+        } else if ( stakingTime < secondsPerDay*42 ){
             unstakePercent = 10;
-        } else if ( stakingTime < secondsPerDay*84 ){
+        } else if ( stakingTime < secondsPerDay*56 ){
             unstakePercent = 5;
         }
         return (unstakePercent);
