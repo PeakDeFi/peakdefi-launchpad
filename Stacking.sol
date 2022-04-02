@@ -14,7 +14,7 @@ contract AllocationStaking {
     }
 
     uint256 internal secondsPerDay = 86400;
-    uint256 public stakingPercent = 7;
+    uint256 public stakingPercent = 20;
     uint256 public secondsPreYear = 31556926;
 
     IERC20 stakingToken;
