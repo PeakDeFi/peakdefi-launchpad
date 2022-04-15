@@ -29,6 +29,7 @@ contract PeakDefiSale {
         uint256 saleEnd;
         uint256 saleStart;
         uint256 tokensUnlockTime;
+        uint256 minimumTokenDeposit;
     }
     struct Participation {
         uint256 amountPaid;
@@ -126,7 +127,8 @@ contract PeakDefiSale {
         uint256 _amountOfTokensToSell,
         uint256 _saleStart,
         uint256 _saleEnd,
-        uint256 _tokensUnlockTime
+        uint256 _tokensUnlockTime,
+        uint256 _minimumTokenDeposit
     ) external onlyAdmin {
         require(!sale.isCreated, "Sale created.");
         require(
@@ -148,6 +150,7 @@ contract PeakDefiSale {
         sale.saleEnd = _saleEnd;
         sale.saleStart = _saleStart;
         sale.tokensUnlockTime = _tokensUnlockTime;
+        sale.minimumTokenDeposit = _minimumTokenDeposit;
     }
 
     function setRegistrationTime(
@@ -267,6 +270,8 @@ contract PeakDefiSale {
 
 
         require( Whitelist[msg.sender].userAddress != address(0), "User must be in white list" );
+
+        require(amount >= sale.minimumTokenDeposit, "Can't deposit less than minimum"  );
 
         uint256 _tierId = Whitelist[msg.sender].userTierId;
         sale.totalBUSDRaised = sale.totalBUSDRaised + amount;
