@@ -268,6 +268,7 @@ contract PeakDefiSale {
 
         require(amount > 0, "Can't buy 0 tokens");
 
+        require((amount / (10 ** BUSDToken.decimals())) % 2 == 0, "Amount need to be divide by 2");
 
         require( Whitelist[msg.sender].userAddress != address(0), "User must be in white list" );
 
