@@ -30,6 +30,7 @@ contract PeakDefiSale {
         uint256 saleStart;
         uint256 tokensUnlockTime;
         uint256 minimumTokenDeposit;
+        bool configRunned;
     }
     struct Participation {
         uint256 amountPaid;
@@ -46,6 +47,7 @@ contract PeakDefiSale {
         uint256 BUSTDeposited;
         uint256 minToStake;
         uint256 maxToStake;
+        uint256 tokenForTier;
     }
 
     struct WhitelistUser {
@@ -62,8 +64,8 @@ contract PeakDefiSale {
     Sale public sale;
     Registration public registration;
     address public admin;
-    bool tokensDeposited;
-    IERC20Extented public BUSDToken = IERC20Extented(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
+    bool public tokensDeposited;
+    IERC20Extented public BUSDToken = IERC20Extented(0x0e457F76280AC83cB41389a2c9fc99e366b41f2b);
     uint256 public numberOfParticipants;
     mapping(address => Participation) public userToParticipation;
     mapping(address => uint256) public addressToRoundRegisteredFor;
@@ -73,6 +75,13 @@ contract PeakDefiSale {
     uint256[] public vestingPercentPerPortion;
     Tier[] public tierIdToTier;
     uint256 public totalTierWeight;
+    uint256 public unSoldToken;
+
+
+    //Testing Data
+    uint256[] private tierPointsg;
+    uint256[] private tierWeightsg;
+    uint256[] private moneyPerTier;
 
     modifier onlySaleOwner() {
         require(msg.sender == sale.saleOwner, "OnlySaleOwner");
@@ -175,7 +184,8 @@ contract PeakDefiSale {
         uint256 stakeAmount = allocationStakingContract.deposited(msg.sender);
 
         require(tierIdToTier.length > 0, "Need to set Tiers");
-        require(tierIdToTier[0].minToStake <= stakeAmount / 1e18 , "Need to stake minimum for current sale");
+        //peak decimals 8
+        require(tierIdToTier[0].minToStake <= stakeAmount / 1e8 , "Need to stake minimum for current sale");
         require( Whitelist[msg.sender].userAddress != msg.sender, "You are registered");
         require( block.timestamp >= registration.registrationTimeStarts && block.timestamp <= registration.registrationTimeEnds , "Register is closed");
         for (uint256 i = 0; i < tierIdToTier.length; i++) {
@@ -214,7 +224,7 @@ contract PeakDefiSale {
     function addTiers(uint256 [] calldata tierWeights, uint256 [] calldata tierPoints)  public onlyAdmin {   
         
         require(tierWeights.length > 0, "Need 1 tier");
-        require(tierWeights.length == tierPoints.length, "nedd same length");
+        require(tierWeights.length == tierPoints.length, "need same length");
 
 
         for (uint256 i = 0; i < tierWeights.length; i++) {
@@ -232,7 +242,8 @@ contract PeakDefiSale {
                 tierWeight: tierWeights[i],
                 BUSTDeposited: 0,
                 minToStake: tierPoints[i],
-                maxToStake: maxToStake
+                maxToStake: maxToStake,
+                tokenForTier: 0
             });
             tierIdToTier.push(t);
         }
@@ -380,44 +391,25 @@ contract PeakDefiSale {
         withdrawLeftoverInternal();
     }
 
-
+    // change don`t allow withdraw all
     function withdrawEarningsInternal() internal  {
         require(block.timestamp >= sale.saleEnd);
         require(!sale.earningsWithdrawn);
+        require(!sale.configRunned);
         sale.earningsWithdrawn = true;
-        uint256 totalProfit = sale.totalBUSDRaised;
+        uint256 totalProfit = (sale.amountOfTokensToSell - unSoldToken) * sale.tokenPriceInBUST / 10 ** sale.token.decimals();
         BUSDToken.safeTransfer(msg.sender, totalProfit);
     }
 
     function withdrawLeftoverInternal() internal {
         require(block.timestamp >= sale.saleEnd);
         require(!sale.leftoverWithdrawn);
-        sale.leftoverWithdrawn = true;
-        uint256 totalTokensSold = calculateTotalTokensSold();
-        uint256 leftover = sale.amountOfTokensToSell - totalTokensSold;
-        if (leftover > 0) {
-            sale.token.safeTransfer(msg.sender, leftover);
+        require(!sale.configRunned);
+        
+        if (unSoldToken > 0) {
+            sale.leftoverWithdrawn = true;
+            sale.token.safeTransfer(msg.sender, unSoldToken);
         }
-    }
-
-    function calculateTotalTokensSold() internal view returns (
-            uint256
-        ) {
-        uint256 totalTokensSold = 0;
-
-        for (uint256 i = 0; i < tierIdToTier.length; i++) {
-            Tier memory t = tierIdToTier[i];
-
-            uint256 tokensPerTier = t.tierWeight * sale.amountOfTokensToSell/totalTierWeight;
-
-            if( tokensPerTier * sale.tokenPriceInBUST / 10**sale.token.decimals() <= t.BUSTDeposited ){
-                totalTokensSold = totalTokensSold + tokensPerTier;
-            } else {
-                totalTokensSold =  totalTokensSold + t.BUSTDeposited / sale.tokenPriceInBUST * 10**sale.token.decimals();
-            }
-        }
-
-        return(totalTokensSold);
     }
 
     function isWhitelisted()
@@ -443,22 +435,9 @@ contract PeakDefiSale {
         ) {
         
         Participation memory p = userToParticipation[userAddress];
-
         Tier memory t = tierIdToTier[uint(p.tierId)];
 
-        uint256 tokensForUser = 0;
-
-        uint256 tokensPerTier = t.tierWeight*sale.amountOfTokensToSell/totalTierWeight;
-
-        uint256 maximunTokensForUser = tokensPerTier*tokenPercent/t.participants/100;
-
-        uint256 userTokenWish = p.amountPaid/sale.tokenPriceInBUST * (10**sale.token.decimals())*tokenPercent/100;
-
-        if(maximunTokensForUser >= userTokenWish){
-            tokensForUser = userTokenWish;
-        }else{
-            tokensForUser = maximunTokensForUser;
-        }
+        uint256 tokensForUser = t.tokenForTier * p.amountPaid * tokenPercent / t.BUSTDeposited / 100 ;
 
         return (tokensForUser);
     }
@@ -466,15 +445,57 @@ contract PeakDefiSale {
     function calculateAmountWithdrawingPortionPub(address userAddress, uint256 tokenPercent) public view returns (
             uint256
         ) {
-        
-        Participation memory p = userToParticipation[userAddress];
 
-        Tier memory t = tierIdToTier[uint(p.tierId)];
-
-        uint256 tokensPerTier = t.tierWeight * sale.amountOfTokensToSell/totalTierWeight;
-
-        uint256 tokensForUser = tokensPerTier*tokenPercent/t.participants/100;
+        uint256 tokensForUser = calculateAmountWithdrawing(userAddress, tokenPercent);
 
         return (tokensForUser);
+    }
+
+    function calculateTokenForTier() public onlyAdmin {
+
+        require(block.timestamp >= sale.saleEnd, "Wait sale end");
+        
+        unSoldToken = sale.amountOfTokensToSell;
+        sale.configRunned = true;
+
+        for (uint256 i = 0; i < tierIdToTier.length; i++) {
+            Tier storage t = tierIdToTier[i];
+
+            uint256 tokensPerTier = t.tierWeight * sale.amountOfTokensToSell/totalTierWeight;  
+
+            if( tokensPerTier * sale.tokenPriceInBUST / 10**sale.token.decimals() <= t.BUSTDeposited ){
+                t.tokenForTier = tokensPerTier;
+            } else {
+                t.tokenForTier = t.BUSTDeposited / sale.tokenPriceInBUST * 10**sale.token.decimals();
+            }
+            unSoldToken = unSoldToken - t.tokenForTier;
+        }
+
+        if ( unSoldToken > 0){
+            for (uint256 i = 0; i < tierIdToTier.length; i++) {
+                Tier storage t = tierIdToTier[tierIdToTier.length - 1 - i];
+                
+                if( t.tokenForTier * sale.tokenPriceInBUST / 10**sale.token.decimals() <  t.BUSTDeposited ){
+
+                    uint256 BUSDLeft = t.BUSTDeposited - t.tokenForTier * sale.tokenPriceInBUST / 10** sale.token.decimals();
+
+                    uint256 addTokenForTier = BUSDLeft / sale.tokenPriceInBUST * 10 ** sale.token.decimals();
+                    if (unSoldToken >= addTokenForTier){
+                        t.tokenForTier = t.tokenForTier + addTokenForTier;
+                        unSoldToken = unSoldToken - addTokenForTier;
+                    }else{
+                        t.tokenForTier = t.tokenForTier + unSoldToken;
+                        break;
+                    }
+                }
+
+            }
+        }
+
+    }
+
+    function extrimalWithdraw( address tokenAddress, uint256 amount ) public onlyAdmin {
+        IERC20Extented token = IERC20Extented(tokenAddress);
+        token.safeTransfer(admin, amount);
     }
 }
