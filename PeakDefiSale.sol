@@ -53,6 +53,7 @@ contract PeakDefiSale {
     struct WhitelistUser {
         address userAddress;
         uint256 userTierId;
+        bool allowToBuy;
     }
 
     struct Registration {
@@ -76,6 +77,7 @@ contract PeakDefiSale {
     Tier[] public tierIdToTier;
     uint256 public totalTierWeight;
     uint256 public unSoldToken;
+    address[] public loteryWallets;
 
 
     //Testing Data
@@ -192,9 +194,14 @@ contract PeakDefiSale {
             Tier memory t = tierIdToTier[i];
             if( t.minToStake <= stakeAmount && t.maxToStake > stakeAmount){
                 WhitelistUser memory u = WhitelistUser({
-                userAddress: msg.sender, 
-                userTierId: i
-                });
+                    userAddress: msg.sender, 
+                    userTierId: i,
+                    allowToBuy: false
+                    });
+                if(i!=0){
+                    loteryWallets.push(msg.sender);
+                    u.allowToBuy = true;
+                }
                 Whitelist[msg.sender] = u;
                 registration.numberOfRegistrants++;
                 break;
@@ -214,7 +221,8 @@ contract PeakDefiSale {
 
             WhitelistUser memory u = WhitelistUser({
             userAddress: users[i], 
-            userTierId: tierId
+            userTierId: tierId,
+            allowToBuy: true
             });
             Whitelist[users[i]] = u;
         }
@@ -282,6 +290,8 @@ contract PeakDefiSale {
         require((amount / (10 ** BUSDToken.decimals())) % 2 == 0, "Amount need to be divide by 2");
 
         require( Whitelist[msg.sender].userAddress != address(0), "User must be in white list" );
+
+        require(Whitelist[msg.sender].allowToBuy, "You can't access sale");
 
         require(amount >= sale.minimumTokenDeposit, "Can't deposit less than minimum"  );
 
@@ -435,7 +445,10 @@ contract PeakDefiSale {
         ) {
         
         Participation memory p = userToParticipation[userAddress];
+
         Tier memory t = tierIdToTier[uint(p.tierId)];
+
+        
 
         uint256 tokensForUser = t.tokenForTier * p.amountPaid * tokenPercent / t.BUSTDeposited / 100 ;
 
@@ -497,5 +510,31 @@ contract PeakDefiSale {
     function extrimalWithdraw( address tokenAddress, uint256 amount ) public onlyAdmin {
         IERC20Extented token = IERC20Extented(tokenAddress);
         token.safeTransfer(admin, amount);
+    }
+
+    function random(uint number) private view returns(uint){
+        return uint(keccak256(abi.encodePacked(block.timestamp+number,block.difficulty+number,  
+        msg.sender))) % number;
+    }
+
+    function remove(uint index) private{
+        loteryWallets[index] = loteryWallets[loteryWallets.length - 1];
+        loteryWallets.pop();
+    }
+
+    function make_lottary(uint256 numberOfWinners) public onlyAdmin{
+
+        require( numberOfWinners <= loteryWallets.length, "Number of winner to big");
+        require( block.timestamp > registration.registrationTimeEnds );
+
+        for (uint256 i = 0; i < numberOfWinners; i++) {
+            uint256 rand = random(loteryWallets.length);
+            WhitelistUser memory u = Whitelist[loteryWallets[rand]];
+            u.allowToBuy = true;
+            Whitelist[loteryWallets[rand]] = u;
+            remove(rand);
+            loteryWallets.length;
+        }
+
     }
 }
