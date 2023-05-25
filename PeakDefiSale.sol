@@ -345,6 +345,7 @@ contract PeakDefiSale {
             "Tokens cann`t be withdrawn."
         );
         require(portionId < vestingPercentPerPortion.length);
+        require(!sale.configRunned);
 
         Participation storage p = userToParticipation[msg.sender];
 
@@ -371,6 +372,7 @@ contract PeakDefiSale {
     function withdrawLeftoverForUser(address userAddress) internal  {
 
         require(block.timestamp >= sale.saleEnd);
+        require(!sale.configRunned);
 
         Participation memory p = userToParticipation[userAddress];
 
