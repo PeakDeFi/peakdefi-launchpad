@@ -340,10 +340,7 @@ contract PeakDefiSale {
     }
 
     function withdrawTokens(uint256 portionId) external {
-        require(
-            block.timestamp >= sale.tokensUnlockTime,
-            "Tokens cann`t be withdrawn."
-        );
+        
         require(portionId < vestingPercentPerPortion.length);
         require(!sale.configRunned);
 
@@ -371,8 +368,8 @@ contract PeakDefiSale {
 
     function withdrawLeftoverForUser(address userAddress) internal  {
 
-        require(block.timestamp >= sale.saleEnd);
         require(!sale.configRunned);
+        require(block.timestamp >= sale.saleEnd);
 
         Participation memory p = userToParticipation[userAddress];
 
@@ -397,6 +394,7 @@ contract PeakDefiSale {
     
 
     function withdrawMultiplePortions(uint256 [] calldata portionIds) external {
+        require(!sale.configRunned);
         uint256 totalToWithdraw = 0;
 
         Participation storage p = userToParticipation[msg.sender];
